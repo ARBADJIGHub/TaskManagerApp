@@ -1,0 +1,28 @@
+version: '3' # Version de docker-compose
+services: # Les services que nous allons utiliser
+    mysql: # Services mysql
+      image: mysql:8.0 # Image mysql version 8.0
+      container_name: taskmanager-mysql # Nom du container
+      environment: # Variables d'environnement
+        MYSQL_ROOT_PASSWORD: rootpassword # Mot de passe root
+        MYSQL_DATABASE: taskmanager # Nom de la base de données
+        MYSQL_USER: user # Nom d'utilisateur
+        MYSQL_PASSWORD: password # Mot de passe
+      ports: 
+        - "3306:3306" # Port de connexion
+      volumes: # Volume pour stocker les données
+        - ./mysql-data:/var/lib/mysql # Volume pour stocker les données
+
+    phpmyadmin: # Serviice phpMyAdmin
+      image: phpmyadmin/phpmyadmin # Image phpMyAdmin
+      container_name: taskmannager-phpmyadmin # Nom du container
+      environment: # Variables d'environnement
+        PMA_HOST: mysql # Nom de l'hôte
+        PMA_PORT: 3306 # Port de connexion
+      ports: # Port de connexion
+        - "8080:80" 
+      depends_on: # Dépendance
+        - mysql
+
+volumes: # Volume pour stocker les données
+  mysql-data: # Volume pour stocker les données
