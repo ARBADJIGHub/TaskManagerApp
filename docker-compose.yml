@@ -1,4 +1,4 @@
-version: '3' # Version de docker-compose
+# Version attribute removed (obsolete)
 services: # Les services que nous allons utiliser
     mysql: # Services mysql
       image: mysql:8.0 # Image mysql version 8.0
@@ -8,10 +8,17 @@ services: # Les services que nous allons utiliser
         MYSQL_DATABASE: taskmanager # Nom de la base de données
         MYSQL_USER: user # Nom d'utilisateur
         MYSQL_PASSWORD: password # Mot de passe
-      ports: 
+      ports:
         - "3306:3306" # Port de connexion
-      volumes: # Volume pour stocker les données
-        - ./mysql-data:/var/lib/mysql # Volume pour stocker les données
+      volumes:
+        # --- Correction ici : Syntaxe Bind Mount ---
+        # Spécifie explicitement le type 'bind'
+        # 'source' est le chemin ABSOLU sur VOTRE PC (l'hôte)
+        # 'target' est le chemin A L'INTERIEUR du conteneur MySQL
+        - type: bind
+          # Utiliser des slashes '/' est souvent plus compatible avec Docker Compose même sous Windows
+          source: C:/Users/arbad/OneDrive - STUDI/Documents/mysql-data
+          target: /var/lib/mysql
 
     phpmyadmin: # Serviice phpMyAdmin
       image: phpmyadmin/phpmyadmin # Image phpMyAdmin
@@ -20,9 +27,11 @@ services: # Les services que nous allons utiliser
         PMA_HOST: mysql # Nom de l'hôte
         PMA_PORT: 3306 # Port de connexion
       ports: # Port de connexion
-        - "8080:80" 
+        - "8080:80"
       depends_on: # Dépendance
         - mysql
 
-volumes: # Volume pour stocker les données
-  mysql-data: # Volume pour stocker les données
+# --- Section 'volumes:' du bas SUPPRIMÉE ---
+# car nous utilisons un bind mount ci-dessus, pas un volume nommé géré par Docker.
+# volumes:
+#  mysql-data:

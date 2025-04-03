@@ -1,97 +1,105 @@
-import bcrypt from 'bcrypt'; // bcrypt module
-import jwt from 'jsonwebtoken'; // jsonwebtoken module
-import pool from '../config/db.js'; // Pool de connexion
+// backend/controllers/authControllers.js (VERSION ENTIÈREMENT CORRIGÉE)
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import pool from "../config/db.js";
 
 // Inscription utilisateur
-export const register = async (req, res) => { // Fonction d'nscription
-    try { // Tentative
-        const { username, email, password } = req.body; // Récupération des données
+export const register = async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
 
-        // Vérifier si l'utilisateur existe déjà
-        const [existingUsers] = await pool.query(
-            'SELECT * FROM users WHERE email = ? OR username = ?', // Requête SQL
-            [email, useraname] // Paramètres
+    // Vérifier si l'utilisateur existe déjà
+    const [existingUsers] = await pool.query(
+      "SELECT * FROM users WHERE email = ? OR username = ?",
+      [email, username] // Utilisation de 'username' (corrigé)
+    );
 
-        );
-
-        if (existingUsers.length > 0) { // Si l'utilisateur existe déjà
-            return res.status(400).json({ message: 'Cet email ou nom d\'utilusateur existe déjà'}); // Retourner une erreur 400
+    if (existingUsers.length > 0) {
+      return res
+        .status(400)
+        .json({ message: "Cet email ou nom d'utilisateur existe déjà" });
     }
 
     // Hasher le mot de passe
-    const salt = await bcrypt.genSalt(10); // Génération du sel de hashage du mot de passe
-    const hashedPassword = await bcrypt.hash(password, salt); // Hashage du mot de passe
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt); // Utilisation de 'password' (correct)
 
     // Insérer le nouvel utilisateur dans la base de données
     const [result] = await pool.query(
-        'INSERT INTO users (username, email, password) VALUES (?, ?, ?)', // Requête SQL
-        [username, email, hashedPasword] // Paramètres
+      "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
+      // CORRECTION ICI: Utilisation de hashedPassword (avec 'ss')
+      [username, email, hashedPassword]
     );
 
     // Créer les paramètres par défaut pour l'utilisateur
-    await pool.query( // Requête SQL
-        'INSERT TO user_settings (user_id) VAUES (?)', // Requête SQL
-        [result.insertId] // Paramètres
-    );
+    // CORRECTION ICI: INSERT INTO et VALUES
+    await pool.query("INSERT INTO user_settings (user_id) VALUES (?)", [
+      result.insertId,
+    ]);
 
     // Générer un token JWT pour l'utilisateur inscrit
     const token = jwt.sign(
-        { id: result.insertId, username, email }, // Définition du playload du token JWT avec l'identifant, le nom d'utilisateur et l'email
-        process.env.JWT_SECRET, // Signature du token JWT
-        { expiresIn: '1d'} // Durée de validité du token JWT
+      { id: result.insertId, username, email },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
     );
 
-    res.status(201).json({ // Retourner une réponse 201
-        token, // Token JWT
-        user: { id: result.insertId, username, email } // Utilisateur inscrit avec l'identifiant, le nom d'utilisateur et l'email
+    res.status(201).json({
+      token,
+      user: { id: result.insertId, username, email },
     });
-
-} catch (error) { // En cas d'erreur
-    console.error(error); // Affichage de l'erreur
-    resizeTo.status(500).json({ message: 'Erreur serveur'}); // Retourner une erreur 500
-    }
+  } catch (error) {
+    console.error("Erreur dans register controller:", error);
+    // Utilisation de 'res' (corrigé)
+    res.status(500).json({ message: "Erreur serveur lors de l'inscription" });
+  }
 };
 
 // Connexion utilisateur
-export const login = async (req, res) => { // Fonction de connexion
-    try { // Tentative
-        const { email, passeword } = req.body; // Récupération des données de la requête POST
-        
-        // Vérifier si l'utilisateur existe
-        const [users] = await poll.query( // Requête SQL pour récupérer l'utilisateur
-            'SELECT * FROM users WEHRE email = ?', // Requête SQL pour récupérer l'utilisateur
-            [email] // Paramètres de la requête SQL
-            );
+export const login = async (req, res) => {
+  try {
+    // CORRECTION ICI: 'password' et non 'passeword'
+    const { email, password } = req.body;
 
-            if (users.length === 0) { // Si l'utilisateur n'esiste pas
-                return res.status(400).json({ message: 'Email ou mot de passe incorrect'}); // Retourner une erreur 400
-            }
+    // Vérifier si l'utilisateur existe
+    // CORRECTION ICI: 'pool' et non 'poll', 'WHERE' et non 'WEHRE'
+    const [users] = await pool.query("SELECT * FROM users WHERE email = ?", [
+      email,
+    ]);
 
-            const user = users[0]; // Utilisateur truvé dans la base de données
+    if (users.length === 0) {
+      // Utilisation de 'mot de passe' (corrigé)
+      return res
+        .status(400)
+        .json({ message: "Email ou mot de passe incorrect" });
+    }
 
-            // Vérifier le mot de passe
-            const validPassword = await bcrypt.compare(password, user.password); // Vérification du mot de passe
-            if (!validPassword) { // Si le mot de passe est incorrect
-                return res.status(400).json({ message: 'Email ou mot de passse incorrect'}); // Retourner une erreur 400
-                }
-            
-            // Générer un token JWT pour l'utilisateur connecté
-            const token = jwt.sign( // Génération du token JWT
-                { id: user.id, username: user.username, email: user.email }, // Définition du playload du token JWT avec l'identifiant, le nom d'utilisateur et l'email
-                process.env.JWT_SECRET, // Signature du token JWT
-                { expiresIn: '1d'} // Durée de validité du token JWT
+    const user = users[0];
 
-            );
+    // Vérifier le mot de passe (utilise 'password' de req.body, maintenant correct)
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      // CORRECTION ICI: 'mot de passe' et non 'mot de passse'
+      return res
+        .status(400)
+        .json({ message: "Email ou mot de passe incorrect" });
+    }
 
-            res.status(200)/json({ // Retourner une réponse 200
-                message: 'Connexion réussie', // Message de connexion réussie
-                token, // Token JWT
-                user: { id: user.id, username: user.username, email: user.email } // Utilisateur connecté avec l'identifiant, le nom d'utilisateur et l'email
-            });
+    // Générer un token JWT pour l'utilisateur connecté
+    const token = jwt.sign(
+      { id: user.id, username: user.username, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
-        } catch (error) { // En cas d'erreur
-            console.error(error); // Affichage de l'erreur
-            res.status(500).json({ message: 'Erreur serveur'}); // Retourner une erreur 500
-            }
-            };
-
+    // CORRECTION ICI: '.' et non '/' avant json
+    res.status(200).json({
+      message: "Connexion réussie",
+      token,
+      user: { id: user.id, username: user.username, email: user.email },
+    });
+  } catch (error) {
+    console.error("Erreur dans login controller:", error);
+    res.status(500).json({ message: "Erreur serveur lors de la connexion" });
+  }
+};
