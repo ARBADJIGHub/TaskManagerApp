@@ -1,17 +1,18 @@
 // src/screens/main/ConversationScreen.js
 import React, {
   useState,
-  useEffect,
+  useEffect, // Importé
   useContext,
-  useCallback,
-  useRef,
-} from "react"; // Ajouter useCallback, useRef
+  useCallback, // Importé
+  useRef, // Importé
+} from "react";
 import {
   View,
   StyleSheet,
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Keyboard, // Importer Keyboard
 } from "react-native";
 import {
   Text,
@@ -24,45 +25,67 @@ import {
 import {
   useRoute,
   useNavigation,
-  useFocusEffect,
-} from "@react-navigation/native"; // Ajouter useFocusEffect
+  useFocusEffect, // Importé
+} from "@react-navigation/native";
 import apiClient from "../../api/apiClient";
-import { AuthContext } from "../../context/AuthContext";
+import { AuthContext } from "../../context/AuthContext"; // Importer AuthContext
 import moment from "moment";
 import "moment/locale/fr"; // S'assurer que la locale est chargée
 
 moment.locale("fr");
 
 export default function ConversationScreen() {
+  // --- Hooks ---
   const theme = useTheme();
   const route = useRoute();
   const navigation = useNavigation();
-  const { userId, userName } = route.params;
-  const { userInfo, userToken, logout } = useContext(AuthContext); // Ajouter logout
+  const { userId, userName } = route.params; // Infos de l'interlocuteur
+  // Récupérer infos/fonctions du contexte, y compris fetchUnreadCount
+  const { userInfo, userToken, logout, fetchUnreadCount } =
+    useContext(AuthContext);
 
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState(null);
-  const flatListRef = useRef(null); // Référence pour scroller la liste
+  // --- États locaux ---
+  const [messages, setMessages] = useState([]); // Liste des messages
+  const [newMessage, setNewMessage] = useState(""); // Texte de l'input
+  const [isLoading, setIsLoading] = useState(false); // Chargement des messages
+  const [isSending, setIsSending] = useState(false); // Envoi en cours
+  const [error, setError] = useState(null); // Erreur de chargement/envoi
+  const flatListRef = useRef(null); // Référence pour la FlatList
 
+  // --- Fonctions ---
+
+  // Marquer les messages comme lus (inchangée)
+  const markMessagesAsRead = useCallback(async () => {
+    if (!userId) return;
+    try {
+      await apiClient.patch(`/messages/conversations/${userId}/read`);
+      console.log(
+        `[ConversationScreen] Messages avec ${userId} marqués comme lus (tentative).`
+      );
+      // Pas besoin de rafraîchir le compteur ici, ce sera fait en sortant
+    } catch (readError) {
+      console.error(
+        "[ConversationScreen] Erreur lors du marquage comme lu:",
+        readError
+      );
+    }
+  }, [userId]);
+
+  // Récupérer les messages de la conversation
   const fetchMessages = useCallback(async () => {
-    // useCallback pour la fonction de fetch
     if (!userToken || !userId) return;
-    console.log(`ConversationScreen: Fetch messages avec user ID: ${userId}`);
-    setIsLoading(true); // Peut être utilisé pour un indicateur spécifique ou le refresh
+    console.log(`[ConversationScreen] Fetch messages avec user ID: ${userId}`);
+    // Afficher loader seulement si pas de messages déjà chargés
+    if (messages.length === 0) setIsLoading(true);
     setError(null);
     try {
       const response = await apiClient.get(`/messages/conversations/${userId}`);
-      console.log("Messages reçus:", response.data);
-      // Les messages sont déjà triés par le backend (ORDER BY created_at ASC)
-      setMessages(response.data);
-      // Marquer les messages comme lus (idéalement, le backend devrait le faire quand on les récupère)
-      markMessagesAsRead();
+      console.log("[ConversationScreen] Messages reçus:", response.data);
+      setMessages(response.data); // Mettre à jour les messages
+      markMessagesAsRead(); // Marquer comme lus après récupération
     } catch (err) {
       console.error(
-        "Erreur chargement messages:",
+        "[ConversationScreen] Erreur chargement messages:",
         err.response?.data || err.message
       );
       if (err.response && err.response.status === 401) {
@@ -71,43 +94,56 @@ export default function ConversationScreen() {
       } else {
         setError("Impossible de charger les messages.");
       }
+      setMessages([]); // Vider en cas d'erreur
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Arrêter le chargement
     }
-  }, [userId, userToken, logout]); // Dépendances
+    // Ajouter markMessagesAsRead aux dépendances car elle est utilisée ici
+  }, [userId, userToken, logout, markMessagesAsRead, messages.length]); // messages.length ajouté pour la logique isLoading
 
-  // Utiliser useFocusEffect pour rafraîchir quand on revient sur l'écran
-  useFocusEffect(fetchMessages);
+  // --- Effets ---
 
-  // Fonction pour marquer les messages comme lus (appel API)
-  const markMessagesAsRead = async () => {
-    try {
-      // On pourrait optimiser et ne marquer que les IDs non lus, mais pour l'instant on marque toute la conv
-      await apiClient.patch(`/messages/conversations/${userId}/read`);
-      console.log("Messages marqués comme lus (tentative)");
-    } catch (readError) {
-      console.error("Erreur lors du marquage comme lu:", readError);
-    }
-  };
+  // *** CORRECTION useFocusEffect ICI ***
+  // Utiliser useFocusEffect pour charger/rafraîchir les messages quand l'écran est focus (CORRIGÉ)
+  useFocusEffect(
+    useCallback(() => {
+      fetchMessages(); // Appeler la fonction async fetchMessages ici
+    }, [fetchMessages]) // La dépendance est la fonction fetchMessages elle-même
+  );
 
+  // *** AJOUT Effet pour rafraîchir le compteur ***
+  // Effet pour rafraîchir le compteur de messages non lus QUAND ON QUITTE l'écran
+  useEffect(() => {
+    // La fonction retournée est exécutée au démontage du composant (quand on quitte)
+    return () => {
+      console.log(
+        "[ConversationScreen] Sortie de l'écran, rafraîchissement du compteur non lus..."
+      );
+      if (fetchUnreadCount) {
+        // Vérifier si la fonction existe (elle devrait)
+        fetchUnreadCount(); // Appeler la fonction du contexte
+      }
+    };
+  }, [fetchUnreadCount]); // La dépendance est la fonction du contexte
+
+  // Envoyer un message (logique inchangée)
   const handleSendMessage = async () => {
-    // ... (logique d'envoi existante) ...
+    // ... (votre logique d'envoi optimiste ici, elle semble correcte) ...
     if (!newMessage.trim() || !userId || isSending) return;
-    const tempMessageId = `temp_${Date.now()}`; // ID temporaire unique
-    const messageContent = newMessage.trim(); // Sauvegarder le contenu
-    setNewMessage(""); // Vider l'input immédiatement
-
-    // Ajout optimiste
+    const tempMessageId = `temp_${Date.now()}`;
+    const messageContent = newMessage.trim();
+    setNewMessage("");
     const sentMessage = {
-      id: tempMessageId, // Utiliser l'ID temporaire
+      id: tempMessageId,
       content: messageContent,
       sender_id: userInfo.id,
       receiver_id: userId,
       created_at: new Date().toISOString(),
       is_read: false,
-      isSending: true, // Marqueur pour UI si besoin
+      isSending: true,
     };
-    setMessages((prevMessages) => [...prevMessages, sentMessage]);
+    // Ajouter au début car la liste est inversée
+    setMessages((prevMessages) => [sentMessage, ...prevMessages]);
 
     setIsSending(true);
     setError(null);
@@ -121,8 +157,6 @@ export default function ConversationScreen() {
         receiverId: userId,
       });
       console.log("Réponse envoi:", response.data);
-
-      // Mettre à jour le message local avec l'ID réel et retirer l'indicateur d'envoi
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg.id === tempMessageId
@@ -133,7 +167,6 @@ export default function ConversationScreen() {
     } catch (err) {
       console.error("Erreur envoi message:", err.response?.data || err.message);
       setError("Erreur d'envoi.");
-      // Marquer le message local comme échoué
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg.id === tempMessageId
@@ -141,20 +174,21 @@ export default function ConversationScreen() {
             : msg
         )
       );
-      // Remettre le texte dans l'input pour que l'user puisse réessayer?
-      // setNewMessage(messageContent);
+      // Optionnel: setNewMessage(messageContent);
     } finally {
       setIsSending(false);
     }
   };
 
+  // Afficher un message (logique inchangée)
   const renderMessageItem = ({ item }) => {
-    const isMyMessage = item.sender_id === userInfo?.id; // Vérifier si userInfo existe
+    // ... (votre logique d'affichage des bulles ici, elle semble correcte) ...
+    const isMyMessage = item.sender_id === userInfo?.id;
     return (
       <View
         style={[
           styles.messageRow,
-          { justifyContent: isMyMessage ? "flex-end" : "flex-start" }, // Aligner toute la ligne
+          { justifyContent: isMyMessage ? "flex-end" : "flex-start" },
         ]}
       >
         <View
@@ -166,7 +200,7 @@ export default function ConversationScreen() {
                 ? theme.colors.primaryContainer
                 : theme.colors.surfaceVariant,
             },
-            item.error ? styles.errorMessage : null, // Style si erreur d'envoi
+            item.error ? styles.errorMessage : null,
           ]}
         >
           <Text
@@ -189,7 +223,6 @@ export default function ConversationScreen() {
               },
             ]}
           >
-            {/* Afficher indicateur d'envoi ou l'heure */}
             {item.isSending
               ? "Envoi..."
               : moment(item.created_at).format("HH:mm")}
@@ -199,17 +232,21 @@ export default function ConversationScreen() {
     );
   };
 
+  // --- Rendu JSX ---
   return (
+    // KeyboardAvoidingView pour gérer le clavier
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined} // 'height' peut poser problème parfois
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0} // Ajuster selon l'en-tête et la barre d'onglets/stack
+      keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0} // Ajuster si besoin
     >
+      {/* En-tête */}
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title={userName || "Conversation"} />
       </Appbar.Header>
 
+      {/* Affichage conditionnel (chargement, erreur, vide) */}
       {isLoading && messages.length === 0 && (
         <ActivityIndicator
           animating={true}
@@ -228,18 +265,21 @@ export default function ConversationScreen() {
         </Text>
       )}
 
+      {/* Liste des messages (inversée) */}
       <FlatList
-        ref={flatListRef} // Ajouter la référence
+        ref={flatListRef}
         data={messages}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => item.id.toString()} // S'assurer que l'ID est une string
         renderItem={renderMessageItem}
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        inverted // Important pour le chat
-        refreshing={isLoading} // Peut être utilisé pour un indicateur de rafraîchissement
-        onRefresh={fetchMessages} // Permettre le pull-to-refresh pour recharger
+        inverted // Affiche du bas vers le haut
+        // Optionnel: Pull-to-refresh
+        // refreshing={isLoading}
+        // onRefresh={fetchMessages}
       />
 
+      {/* Zone de saisie */}
       <View
         style={[
           styles.inputContainer,
@@ -253,7 +293,7 @@ export default function ConversationScreen() {
           onChangeText={setNewMessage}
           mode="outlined"
           multiline
-          dense // Rendre un peu moins haut
+          dense
         />
         <IconButton
           icon="send"
@@ -261,14 +301,14 @@ export default function ConversationScreen() {
           onPress={handleSendMessage}
           disabled={isSending || !newMessage.trim()}
           iconColor={theme.colors.primary}
-          animated // Ajouter une petite animation
+          animated
         />
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-// Styles mis à jour pour le chat
+// Styles (inchangés par rapport à votre version)
 const styles = StyleSheet.create({
   container: { flex: 1 },
   activityIndicator: {
@@ -284,53 +324,29 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   list: { flex: 1 },
-  listContent: { paddingHorizontal: 10, paddingBottom: 10 }, // Espace en bas aussi
+  listContent: { paddingHorizontal: 10, paddingBottom: 10 },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 8,
     paddingHorizontal: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "grey", // Ou theme.colors.outline
+    borderTopColor: "grey",
   },
-  input: {
-    flex: 1,
-    marginRight: 8,
-    maxHeight: 100, // Limiter la hauteur si multiline
-  },
-  messageRow: {
-    // Nouvelle vue pour aligner la bulle
-    marginVertical: 4,
-  },
+  input: { flex: 1, marginRight: 8, maxHeight: 100 },
+  messageRow: { marginVertical: 4, flexDirection: "row" }, // Ajout flexDirection
   messageBubble: {
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 20, // Plus arrondi
-    maxWidth: "75%", // Un peu moins large
+    borderRadius: 20,
+    maxWidth: "75%",
   },
   myMessage: {
-    // Pas besoin de alignSelf ici si messageRow le gère
-    backgroundColor: "#DCF8C6", // Exemple couleur pour mes messages
-    borderBottomRightRadius: 5,
+    borderBottomRightRadius: 5 /* backgroundColor défini par thème */,
   },
   otherMessage: {
-    // Pas besoin de alignSelf ici
-    backgroundColor: "#FFFFFF", // Exemple couleur pour autres messages
-    borderBottomLeftRadius: 5,
-    // Ajouter une bordure pour mieux distinguer sur fond blanc
-    // borderWidth: StyleSheet.hairlineWidth,
-    // borderColor: '#E0E0E0',
+    borderBottomLeftRadius: 5 /* backgroundColor défini par thème */,
   },
-  messageTime: {
-    fontSize: 10,
-    marginTop: 4,
-    textAlign: "right",
-    opacity: 0.6, // Rendre plus discret
-  },
-  errorMessage: {
-    // Style pour les messages échoués
-    opacity: 0.7,
-    borderColor: "red",
-    borderWidth: 1,
-  },
+  messageTime: { fontSize: 10, marginTop: 4, textAlign: "right", opacity: 0.7 },
+  errorMessage: { opacity: 0.7, borderColor: "red", borderWidth: 1 },
 });

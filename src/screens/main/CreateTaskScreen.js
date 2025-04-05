@@ -1,6 +1,5 @@
 // src/screens/main/CreateTaskScreen.js
-import React, { useState } from "react";
-// Platform est nécessaire pour la condition
+import React, { useState, useCallback, useContext } from "react"; // Ajout de useContext et useCallback
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import {
   TextInput,
@@ -10,125 +9,139 @@ import {
   ActivityIndicator,
   HelperText,
   Text,
+  TouchableRipple, // Conservé même si non utilisé directement ici, peut être utile
 } from "react-native-paper";
-// Importer le picker (même s'il n'est pas utilisé sur web)
-import DateTimePicker from "@react-native-community/datetimepicker";
+// Importer le DatePickerModal et la fonction de traduction
+import { DatePickerModal, registerTranslation } from "react-native-paper-dates";
+// Importer le contexte Snackbar
+import { SnackbarContext } from "../../context/SnackbarContext"; // <-- AJOUT IMPORT SNACKBARCONTEXT
 import moment from "moment";
 import "moment/locale/fr";
 import apiClient from "../../api/apiClient";
 import { useNavigation } from "@react-navigation/native";
 
+// Configuration de la localisation FR (peut être centralisée)
+registerTranslation("fr", {
+  save: "Confirmer",
+  selectSingle: "Sélectionner date",
+  selectMultiple: "Sélectionner dates",
+  selectRange: "Sélectionner période",
+  notAccordingToDateFormat: (inputFormat) => `Format attendu: ${inputFormat}`,
+  mustBeHigherThan: (date) => `Doit être après ${date}`,
+  mustBeLowerThan: (date) => `Doit être avant ${date}`,
+  mustBeBetween: (startDate, endDate) =>
+    `Doit être entre ${startDate} et ${endDate}`,
+  dateIsDisabled: "Jour désactivé",
+  previous: "Précédent",
+  next: "Suivant",
+  typeInDate: "Saisir date",
+  pickDateFromCalendar: "Choisir depuis calendrier",
+  close: "Fermer",
+});
+
 moment.locale("fr");
 
 export default function CreateTaskScreen() {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  // Garder l'état, mais il ne sera pas modifié sur web
-  const [dueDate, setDueDate] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState("date");
-  const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState({});
+  // --- Hooks ---
   const theme = useTheme();
   const navigation = useNavigation();
+  const { showSnackbar } = useContext(SnackbarContext); // <-- AJOUT: Récupérer showSnackbar
 
-  const onChangeDate = (event, selectedDate) => {
-    if (event.type === "dismissed") {
-      setShowPicker(false);
-      return;
-    }
-    const currentDate = selectedDate || dueDate;
-    setShowPicker(Platform.OS === "ios"); // Peut-être seulement setShowPicker(false) suffit
-    setShowPicker(false);
-    setDueDate(currentDate);
-  };
-  const showMode = (currentMode) => {
-    if (Platform.OS === "web") {
-      Alert.alert(
-        "Non supporté",
-        "La sélection de date n'est pas supportée sur le web pour le moment."
-      );
-      return;
-    }
-    setShowPicker(true);
-    setPickerMode(currentMode);
-  };
-  const showDatepicker = () => showMode("date");
-  const showTimepicker = () => showMode("time");
+  // --- États locaux ---
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState(undefined); // Date d'échéance (objet Date ou undefined)
+  const [isDatePickerVisible, setIsDatePickerVisible] = useState(false); // Visibilité du modal date
+  const [isLoading, setIsLoading] = useState(false); // Indicateur de chargement
+  const [errors, setErrors] = useState({}); // Erreurs de validation
 
+  // --- Fonctions DatePickerModal ---
+  const onDismissDatePicker = useCallback(() => {
+    setIsDatePickerVisible(false);
+  }, []); // Pas de dépendance, la fonction est stable
+
+  const onConfirmDatePicker = useCallback((params) => {
+    setIsDatePickerVisible(false);
+    setDueDate(params.date); // Met à jour l'état
+  }, []); // Pas de dépendance, la fonction est stable
+
+  // --- Validation et Création ---
+
+  // Fonction de validation du formulaire
   const validateForm = () => {
-    console.log("[CreateTaskScreen] validateForm: Vérification titre =", title);
     const newErrors = {};
     if (!title.trim()) {
-      console.log("[CreateTaskScreen] validateForm: Erreur - Titre vide");
+      // Vérifie si le titre est vide
       newErrors.title = "Le titre est requis.";
     }
-    setErrors(newErrors);
-    const result = Object.keys(newErrors).length === 0;
-    console.log("[CreateTaskScreen] validateForm: Retourne", result);
-    return result;
+    setErrors(newErrors); // Met à jour les erreurs (affiche sous le champ)
+    return Object.keys(newErrors).length === 0; // True si pas d'erreur
   };
+
+  // Fonction appelée lors du clic sur "Créer la Tâche"
   const handleCreateTask = async () => {
-    console.log("[CreateTaskScreen] handleCreateTask: Bouton cliqué !");
-    const isValid = validateForm();
-    console.log(
-      "[CreateTaskScreen] handleCreateTask: Résultat validation =",
-      isValid
-    );
-    if (!isValid) {
-      console.log(
-        "[CreateTaskScreen] handleCreateTask: Validation échouée, sortie."
-      );
-      return;
-    }
-    console.log(
-      "[CreateTaskScreen] handleCreateTask: Validation réussie, début création API..."
-    );
+    // 1. Valider le formulaire
+    if (!validateForm()) return;
+
+    // 2. Démarrer le chargement, reset erreurs
     setIsLoading(true);
     setErrors({});
+
     try {
+      // 3. Préparer les données pour l'API
       const taskData = {
         title: title.trim(),
         description: description.trim(),
-        due_date: moment(dueDate).isValid()
+        // Formater la date en string YYYY-MM-DD HH:mm:ss si elle existe, sinon null
+        due_date: dueDate
           ? moment(dueDate).format("YYYY-MM-DD HH:mm:ss")
           : null,
       };
-      console.log(
-        "[CreateTaskScreen] handleCreateTask: Envoi des données tâche:",
-        taskData
-      );
-      const response = await apiClient.post("/tasks", taskData);
-      console.log(
-        "[CreateTaskScreen] handleCreateTask: Réponse API reçue:",
-        response.date
-      );
-      Alert.alert("Succès", "Tâche créée avec succès !");
-      navigation.goBack();
+      console.log("[CreateTaskScreen] Envoi des données tâche:", taskData);
+
+      // 4. Appel API POST pour créer la tâche
+      await apiClient.post("/tasks", taskData);
+
+      // --- MODIFICATION ICI: Utiliser Snackbar ---
+      // Ancienne méthode: Alert.alert("Succès", "Tâche créée avec succès !");
+      showSnackbar("Tâche créée avec succès !"); // Nouvelle méthode
+
+      // 5. Revenir à l'écran précédent après un délai pour voir le Snackbar
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1000); // Délai de 1 seconde
     } catch (error) {
+      // 6. Gérer les erreurs de l'API
       console.error(
-        "[CreateTaskScreen] handleCreateTask: Erreur API",
-        error.response?.data || error.message || error
+        "[CreateTaskScreen] Erreur création tâche:",
+        error.response?.data || error.message
       );
+      // Utiliser Alert pour les erreurs critiques
       Alert.alert(
         "Erreur",
         error.response?.data?.message || "Impossible de créer la tâche."
       );
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Arrêter le chargement ici en cas d'erreur
     }
+    // Pas de finally pour setIsLoading(false) car le succès navigue en arrière après délai
   };
 
+  // --- Rendu JSX ---
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      {/* En-tête */}
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Nouvelle Tâche" />
+        {/* Optionnel: Mettre le bouton de création ici au lieu d'en bas */}
+        {/* <Appbar.Action icon="check" onPress={handleCreateTask} disabled={isLoading} /> */}
       </Appbar.Header>
+
+      {/* Contenu scrollable */}
       <ScrollView contentContainerStyle={styles.content}>
-        {/* ... TextInput Titre / Description ... */}
+        {/* Champ Titre */}
         <TextInput
           label="Titre *"
           value={title}
@@ -137,11 +150,9 @@ export default function CreateTaskScreen() {
           mode="outlined"
           error={!!errors.title}
         />
-        {errors.title && (
-          <HelperText type="error" visible={!!errors.title}>
-            {errors.title}
-          </HelperText>
-        )}
+        {errors.title && <HelperText type="error">{errors.title}</HelperText>}
+
+        {/* Champ Description */}
         <TextInput
           label="Description"
           value={description}
@@ -152,53 +163,24 @@ export default function CreateTaskScreen() {
           numberOfLines={4}
         />
 
-        {/* Affichage de la date (même si non modifiable sur web) */}
+        {/* Section Date d'Échéance */}
         <Text style={styles.dateLabel}>Échéance :</Text>
-        <Text style={styles.dateValue}>
-          {moment(dueDate).format("ddd D MMM Yfine à HH:mm")}
-        </Text>
+        <Button
+          icon="calendar"
+          mode="outlined"
+          onPress={() => setIsDatePickerVisible(true)} // Ouvre la modale date
+          style={styles.dateButtonFullWidth}
+          contentStyle={styles.dateButtonContent}
+          labelStyle={styles.dateButtonLabel}
+          disabled={isLoading}
+          textColor={theme.colors.onSurface}
+        >
+          {dueDate
+            ? moment(dueDate).format("dddd D MMMM YYYY")
+            : "Choisir une date"}
+        </Button>
 
-        {/* Boutons pour ouvrir les pickers (désactivés sur web implicitement par showMode) */}
-        {Platform.OS !== "web" && ( // N'afficher les boutons que si PAS web
-          <View style={styles.dateButtonsContainer}>
-            <Button
-              icon="calendar"
-              mode="outlined"
-              onPress={showDatepicker}
-              style={styles.dateButton}
-            >
-              Modifier Date
-            </Button>
-            <Button
-              icon="clock-outline"
-              mode="outlined"
-              onPress={showTimepicker}
-              style={styles.dateButton}
-            >
-              Modifier Heure
-            </Button>
-          </View>
-        )}
-        {/* Message informatif pour le web */}
-        {Platform.OS === "web" && (
-          <Text style={styles.webDateInfo}>
-            (Sélection date/heure non supportée sur web)
-          </Text>
-        )}
-
-        {/* Affichage conditionnel du DateTimePicker (ne s'affichera pas sur web si showPicker reste false) */}
-        {showPicker && Platform.OS !== "web" && (
-          <DateTimePicker
-            testID="dateTimePickerTask"
-            value={dueDate}
-            mode={pickerMode}
-            is24Hour={true}
-            display="default"
-            onChange={onChangeDate}
-          />
-        )}
-
-        {/* ... Bouton Créer / ActivityIndicator ... */}
+        {/* Bouton Créer / Indicateur de chargement */}
         {isLoading ? (
           <ActivityIndicator
             animating={true}
@@ -209,34 +191,43 @@ export default function CreateTaskScreen() {
             mode="contained"
             onPress={handleCreateTask}
             style={styles.button}
+            disabled={isLoading}
           >
-            {" "}
-            Créer la Tâche{" "}
+            Créer la Tâche
           </Button>
         )}
       </ScrollView>
+
+      {/* Modal DatePicker (invisible par défaut) */}
+      <DatePickerModal
+        locale="fr"
+        mode="single"
+        visible={isDatePickerVisible}
+        onDismiss={onDismissDatePicker}
+        date={dueDate || new Date()} // Date initiale
+        onConfirm={onConfirmDatePicker}
+        saveLabel="Confirmer"
+        label="Sélectionner une date d'échéance" // Titre de la modale
+      />
+      {/* Le Snackbar est géré globalement par SnackbarProvider */}
     </View>
   );
 }
 
+// Styles
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 20 },
+  content: { padding: 20, paddingBottom: 40 },
   input: { marginBottom: 16 },
   dateLabel: { fontSize: 16, marginBottom: 4, color: "grey" },
-  dateValue: { fontSize: 18, marginBottom: 12, fontWeight: "500" },
-  dateButtonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+  dateButtonFullWidth: {
     marginBottom: 16,
+    borderWidth: 1,
+    borderRadius: 4,
+    borderColor: "grey",
   },
-  dateButton: { flex: 1, marginHorizontal: 5 },
-  webDateInfo: {
-    alignSelf: "center",
-    fontStyle: "italic",
-    color: "grey",
-    marginBottom: 16,
-  }, // Style pour le message web
+  dateButtonContent: { paddingVertical: 8, justifyContent: "flex-start" },
+  dateButtonLabel: { fontSize: 16 },
   button: { marginTop: 16, paddingVertical: 8 },
   activityIndicator: { marginTop: 20 },
 });

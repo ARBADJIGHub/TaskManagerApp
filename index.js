@@ -1,41 +1,43 @@
-// index.js (à la racine)
-import React, { useContext } from "react";
+// index.js
+import "react-native-gesture-handler"; // Doit être en haut
 import { registerRootComponent } from "expo";
+import React from "react";
+import { Provider as PaperProvider } from "react-native-paper";
+import { SafeAreaProvider } from "react-native-safe-area-context"; // <-- **IMPORTER ICI**
+import { AuthProvider } from "./src/context/AuthContext";
+import { ThemeProvider, ThemeContext } from "./src/context/ThemeContext";
+import { SnackbarProvider } from "./src/context/SnackbarContext";
+import RootNavigator from "./src/navigation/RootNavigator";
 
-// --- Imports Corrigés ---
-import { AuthProvider } from "./src/context/AuthContext"; // Provider pour l'authentification
-// Importation de ThemeProvider ET ThemeContext depuis votre fichier
-import { ThemeProvider, ThemeContext } from "./src/context/ThemeContext.js";
-import RootNavigator from "./src/navigation/RootNavigator"; // Votre navigateur racine
-import { Provider as PaperProvider } from "react-native-paper"; // Provider pour React Native Paper
-
-// Composant intermédiaire pour appliquer le thème à PaperProvider
+// Composant intermédiaire pour accéder au thème fourni par ThemeProvider
 const ThemeApp = () => {
-  // Utilise ThemeContext (maintenant importé) pour récupérer le thème
-  const { theme } = useContext(ThemeContext);
+  const { theme } = React.useContext(ThemeContext); // Utiliser useContext ici
+  // PaperProvider gère aussi certaines choses liées à la safe area via SafeAreaProviderCompat,
+  // mais il est recommandé d'avoir un SafeAreaProvider principal englobant tout.
   return (
-    // PaperProvider reçoit le thème dynamique
     <PaperProvider theme={theme}>
       <RootNavigator />
     </PaperProvider>
   );
 };
 
-// Composant racine final, correctement enveloppé
-const AppRoot = () => (
-  // 1. AuthProvider englobe tout
-  <AuthProvider>
-    {/* 2. ThemeProvider englobe l'application thématisée */}
-    <ThemeProvider>
-      {/* 3. ThemeApp applique le thème à Paper et contient la navigation */}
-      <ThemeApp />
-    </ThemeProvider>
-  </AuthProvider>
-);
+// Composant racine de l'application
+function AppRoot() {
+  return (
+    // **ENTOURER TOUTE L'APPLICATION AVEC SafeAreaProvider**
+    <SafeAreaProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <SnackbarProvider>
+            {/* ThemeApp contient PaperProvider et RootNavigator */}
+            <ThemeApp />
+            {/* Le Snackbar global est rendu à l'intérieur de SnackbarProvider */}
+          </SnackbarProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </SafeAreaProvider> // **FIN de SafeAreaProvider**
+  );
+}
 
-// --- Enregistrement Corrigé ---
-// Enregistrer AppRoot UNE SEULE FOIS
+// Enregistrement du composant racine
 registerRootComponent(AppRoot);
-
-// L'ancien fichier App.js n'est plus utilisé comme point d'entrée direct.
-// Vous pouvez le supprimer, le renommer ou vider son contenu si vous le souhaitez.

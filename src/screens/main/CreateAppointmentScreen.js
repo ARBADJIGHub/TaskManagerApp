@@ -1,119 +1,179 @@
 // src/screens/main/CreateAppointmentScreen.js
-import React, { useState } from "react";
-// Assurez-vous que Platform est bien importé depuis react-native
-import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
+import React, { useState, useCallback, useContext } from "react"; // Ajout de useContext et useCallback
+// Platform n'est plus nécessaire ici
+import { View, StyleSheet, Alert, ScrollView } from "react-native";
 import {
   TextInput,
-  Button,
+  Button, // Gardé pour le bouton principal "Créer"
   Appbar,
   useTheme,
   ActivityIndicator,
   HelperText,
   Text,
+  List, // Nécessaire pour List.Icon dans l'affichage date/heure
+  TouchableRipple, // Pour rendre date/heure cliquables
 } from "react-native-paper";
-// --- MODIFICATION IMPORT ---
-// Importer le picker de base de la communauté
-import DateTimePicker from "@react-native-community/datetimepicker";
-// Supprimer l'import du modal picker
-// import DateTimePickerModal from "react-native-modal-datetime-picker";
-// --- FIN MODIFICATION IMPORT ---
+// Importer les modals de react-native-paper-dates
+import {
+  DatePickerModal,
+  TimePickerModal,
+  registerTranslation,
+} from "react-native-paper-dates";
+// Importer le contexte Snackbar
+import { SnackbarContext } from "../../context/SnackbarContext"; // <-- AJOUT IMPORT SNACKBARCONTEXT
 import moment from "moment";
 import "moment/locale/fr";
 import apiClient from "../../api/apiClient";
 import { useNavigation } from "@react-navigation/native";
 
+// Configuration de la localisation FR (peut être centralisée)
+registerTranslation("fr", {
+  save: "Confirmer",
+  selectSingle: "Sélectionner date",
+  selectMultiple: "Sélectionner dates",
+  selectRange: "Sélectionner période",
+  notAccordingToDateFormat: (inputFormat) => `Format attendu: ${inputFormat}`,
+  mustBeHigherThan: (date) => `Doit être après ${date}`,
+  mustBeLowerThan: (date) => `Doit être avant ${date}`,
+  mustBeBetween: (startDate, endDate) =>
+    `Doit être entre ${startDate} et ${endDate}`,
+  dateIsDisabled: "Jour désactivé",
+  previous: "Précédent",
+  next: "Suivant",
+  typeInDate: "Saisir date",
+  pickDateFromCalendar: "Choisir depuis calendrier",
+  close: "Fermer",
+  hour: "Heure",
+  minute: "Minute",
+  hours: "Heures",
+  minutes: "Minutes",
+});
+
 moment.locale("fr");
 
 export default function CreateAppointmentScreen() {
+  // --- Hooks ---
+  const theme = useTheme();
+  const navigation = useNavigation();
+  const { showSnackbar } = useContext(SnackbarContext); // <-- RÉCUPÉRER showSnackbar
+
+  // --- États locaux ---
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
-  // Initialiser avec des dates valides
-  const [startTime, setStartTime] = useState(new Date());
-  const [endTime, setEndTime] = useState(moment().add(1, "hour").toDate());
-  // États pour gérer le picker communautaire
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState("date"); // 'date' ou 'time'
-  const [pickerTarget, setPickerTarget] = useState("start"); // 'start' ou 'end'
+  const [startTime, setStartTime] = useState(new Date()); // Date/heure début (objet Date)
+  const [endTime, setEndTime] = useState(moment().add(1, "hour").toDate()); // Date/heure fin (objet Date)
+  // États pour la visibilité des modals
+  const [isStartDatePickerVisible, setIsStartDatePickerVisible] =
+    useState(false);
+  const [isStartTimePickerVisible, setIsStartTimePickerVisible] =
+    useState(false);
+  const [isEndDatePickerVisible, setIsEndDatePickerVisible] = useState(false);
+  const [isEndTimePickerVisible, setIsEndTimePickerVisible] = useState(false);
   // Autres états
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const theme = useTheme();
-  const navigation = useNavigation();
 
-  // --- GESTION MISE À JOUR DU PICKER COMMUNAUTAIRE ---
-  const onChangeDateTime = (event, selectedDate) => {
-    // Cacher le picker immédiatement (surtout nécessaire sur Android après sélection/annulation)
-    setShowPicker(false);
-    // Si une date est sélectionnée (et non annulée)
-    if (event.type === "set" && selectedDate) {
-      const currentDate = selectedDate;
-
-      if (pickerTarget === "start") {
-        console.log("Nouvelle heure de début:", currentDate);
-        // Vérifier et ajuster l'heure de fin si nécessaire
-        if (moment(currentDate).isSameOrAfter(moment(endTime))) {
-          setEndTime(moment(currentDate).add(1, "hour").toDate());
-        }
-        setStartTime(currentDate);
-      } else {
-        // pickerTarget === 'end'
-        console.log("Nouvelle heure de fin:", currentDate);
-        // Vérifier si la fin est bien après le début
-        if (moment(currentDate).isSameOrBefore(moment(startTime))) {
-          Alert.alert(
-            "Erreur",
-            "L'heure de fin doit être après l'heure de début."
-          );
-          // Ne pas mettre à jour endTime
-        } else {
-          setEndTime(currentDate);
-        }
+  // --- Fonctions de rappel pour les Modals ---
+  // (Inchangées par rapport à la version précédente avec les modals)
+  const onDismissPickers = useCallback(() => {
+    setIsStartDatePickerVisible(false);
+    setIsStartTimePickerVisible(false);
+    setIsEndDatePickerVisible(false);
+    setIsEndTimePickerVisible(false);
+  }, []);
+  const onConfirmStartDatePicker = useCallback(
+    ({ date }) => {
+      setIsStartDatePickerVisible(false);
+      if (!date) return;
+      const newStartTime = moment(date)
+        .hours(moment(startTime).hours())
+        .minutes(moment(startTime).minutes())
+        .seconds(0)
+        .toDate();
+      setStartTime(newStartTime);
+      if (moment(endTime).isSameOrBefore(moment(newStartTime))) {
+        setEndTime(moment(newStartTime).add(1, "hour").toDate());
       }
-    } else {
-      // L'utilisateur a annulé (surtout sur Android), ne rien faire
-      console.log("Sélection de date/heure annulée");
-    }
-  };
+    },
+    [startTime, endTime]
+  );
+  const onConfirmStartTimePicker = useCallback(
+    ({ hours, minutes }) => {
+      setIsStartTimePickerVisible(false);
+      const newStartTime = moment(startTime)
+        .hours(hours)
+        .minutes(minutes)
+        .seconds(0)
+        .toDate();
+      setStartTime(newStartTime);
+      if (moment(endTime).isSameOrBefore(moment(newStartTime))) {
+        setEndTime(moment(newStartTime).add(1, "hour").toDate());
+      }
+    },
+    [startTime, endTime]
+  );
+  const onConfirmEndDatePicker = useCallback(
+    ({ date }) => {
+      setIsEndDatePickerVisible(false);
+      if (!date) return;
+      const newEndTime = moment(date)
+        .hours(moment(endTime).hours())
+        .minutes(moment(endTime).minutes())
+        .seconds(0)
+        .toDate();
+      if (moment(newEndTime).isSameOrBefore(moment(startTime))) {
+        Alert.alert(
+          "Erreur",
+          "L'heure de fin doit être après l'heure de début."
+        );
+      } else {
+        setEndTime(newEndTime);
+      }
+    },
+    [startTime, endTime]
+  );
+  const onConfirmEndTimePicker = useCallback(
+    ({ hours, minutes }) => {
+      setIsEndTimePickerVisible(false);
+      const newEndTime = moment(endTime)
+        .hours(hours)
+        .minutes(minutes)
+        .seconds(0)
+        .toDate();
+      if (moment(newEndTime).isSameOrBefore(moment(startTime))) {
+        Alert.alert(
+          "Erreur",
+          "L'heure de fin doit être après l'heure de début."
+        );
+      } else {
+        setEndTime(newEndTime);
+      }
+    },
+    [startTime, endTime]
+  );
 
-  // Fonction pour déclencher l'affichage du picker
-  const showModeFor = (target, currentMode) => {
-    // Désactiver sur le web pour l'instant
-    if (Platform.OS === "web") {
-      Alert.alert(
-        "Non supporté",
-        "La sélection de date/heure n'est pas interactive sur le web dans cette version."
-      );
-      return; // Ne pas afficher le picker sur web
-    }
-    // Définir quelle date ('start'/'end') et quel mode ('date'/'time') afficher
-    setPickerTarget(target);
-    setPickerMode(currentMode);
-    setShowPicker(true); // Afficher le picker (sur mobile)
-  };
-  // --- FIN GESTION PICKER ---
-
+  // --- Validation et Création ---
+  // Validation du formulaire (inchangée)
   const validateForm = () => {
     const newErrors = {};
     if (!title.trim()) newErrors.title = "Le titre est requis.";
-    if (!startTime) newErrors.startTime = "L'heure de début est requise."; // Garder la validation
-    if (!endTime) newErrors.endTime = "L'heure de fin est requise.";
-    if (
-      startTime &&
-      endTime &&
-      moment(endTime).isSameOrBefore(moment(startTime))
-    ) {
-      newErrors.endTime = "La fin doit être après le début."; // Ajouter cette validation
+    if (moment(endTime).isSameOrBefore(moment(startTime))) {
+      newErrors.endTime = "La date/heure de fin doit être après le début.";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Fonction appelée lors du clic sur "Créer le Rendez-vous"
   const handleCreateAppointment = async () => {
+    // 1. Valider
     if (!validateForm()) return;
+    // 2. Démarrer chargement & reset erreurs
     setIsLoading(true);
     setErrors({});
     try {
+      // 3. Préparer données
       const appointmentData = {
         title: title.trim(),
         description: description.trim(),
@@ -121,34 +181,51 @@ export default function CreateAppointmentScreen() {
         start_time: moment(startTime).format("YYYY-MM-DD HH:mm:ss"),
         end_time: moment(endTime).format("YYYY-MM-DD HH:mm:ss"),
       };
-      console.log("Envoi des données RDV:", appointmentData);
+      console.log(
+        "[CreateAppointmentScreen] Envoi des données RDV:",
+        appointmentData
+      );
+      // 4. Appel API POST
       await apiClient.post("/appointments", appointmentData);
-      Alert.alert("Succès", "Rendez-vous créé avec succès !");
-      navigation.goBack();
+
+      // --- MODIFICATION ICI: Utiliser Snackbar ---
+      // Ancienne méthode: Alert.alert("Succès", "Rendez-vous créé avec succès !");
+      showSnackbar("Rendez-vous créé avec succès !"); // Nouvelle méthode
+
+      // 5. Naviguer en arrière après délai
+      setTimeout(() => {
+        navigation.goBack();
+      }, 1000);
     } catch (error) {
+      // 6. Gérer erreurs API
       console.error(
-        "Erreur création RDV:",
+        "[CreateAppointmentScreen] Erreur création RDV:",
         error.response?.data || error.message
       );
       Alert.alert(
+        // Garder Alert pour erreurs serveur
         "Erreur",
         error.response?.data?.message || "Impossible de créer le rendez-vous."
       );
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Arrêter chargement en cas d'erreur
     }
+    // Pas de finally pour setIsLoading ici car le succès navigue après délai
   };
 
+  // --- Rendu JSX ---
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
+      {/* En-tête */}
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Nouveau Rendez-vous" />
       </Appbar.Header>
+
+      {/* Formulaire */}
       <ScrollView contentContainerStyle={styles.content}>
-        {/* ... TextInput Titre, Description, Lieu (inchangés) ... */}
+        {/* Champs Titre, Description, Lieu */}
         <TextInput
           label="Titre *"
           value={title}
@@ -175,97 +252,61 @@ export default function CreateAppointmentScreen() {
           mode="outlined"
         />
 
-        {/* Affichage et boutons pour StartTime */}
+        {/* Section Date/Heure Début */}
         <Text style={styles.dateLabel}>Début* :</Text>
-        <Text style={styles.dateValue}>
-          {/* Afficher la date même si on ne peut pas la changer sur web */}
-          {moment(startTime).format("ddd D MMM H:mm")}
-        </Text>
-        {/* N'afficher les boutons que sur mobile */}
-        {Platform.OS !== "web" && (
-          <View style={styles.dateButtonsContainer}>
-            <Button
-              icon="calendar"
-              mode="outlined"
-              onPress={() => showModeFor("start", "date")}
-              style={styles.dateButton}
-            >
-              {" "}
-              Date Début{" "}
-            </Button>
-            <Button
-              icon="clock-outline"
-              mode="outlined"
-              onPress={() => showModeFor("start", "time")}
-              style={styles.dateButton}
-            >
-              {" "}
-              Heure Début{" "}
-            </Button>
+        <TouchableRipple
+          onPress={() => setIsStartDatePickerVisible(true)}
+          style={styles.touchableDate}
+        >
+          <View style={styles.dateDisplay}>
+            <List.Icon icon="calendar" />
+            <Text style={styles.dateText}>
+              {moment(startTime).format("dddd D MMMM YYYY")}
+            </Text>
           </View>
-        )}
-        {errors.startTime && (
-          <HelperText type="error">{errors.startTime}</HelperText>
-        )}
+        </TouchableRipple>
+        <TouchableRipple
+          onPress={() => setIsStartTimePickerVisible(true)}
+          style={styles.touchableTime}
+        >
+          <View style={styles.dateDisplay}>
+            <List.Icon icon="clock-outline" />
+            <Text style={styles.dateText}>
+              {moment(startTime).format("HH:mm")}
+            </Text>
+          </View>
+        </TouchableRipple>
+        {/* Pas d'erreur spécifique à startTime */}
 
-        {/* Affichage et boutons pour EndTime */}
+        {/* Section Date/Heure Fin */}
         <Text style={styles.dateLabel}>Fin* :</Text>
-        <Text style={styles.dateValue}>
-          {/* Afficher la date même si on ne peut pas la changer sur web */}
-          {moment(endTime).format("ddd D MMM H:mm")}
-        </Text>
-        {/* N'afficher les boutons que sur mobile */}
-        {Platform.OS !== "web" && (
-          <View style={styles.dateButtonsContainer}>
-            <Button
-              icon="calendar"
-              mode="outlined"
-              onPress={() => showModeFor("end", "date")}
-              style={styles.dateButton}
-            >
-              {" "}
-              Date Fin{" "}
-            </Button>
-            <Button
-              icon="clock-outline"
-              mode="outlined"
-              onPress={() => showModeFor("end", "time")}
-              style={styles.dateButton}
-            >
-              {" "}
-              Heure Fin{" "}
-            </Button>
+        <TouchableRipple
+          onPress={() => setIsEndDatePickerVisible(true)}
+          style={styles.touchableDate}
+        >
+          <View style={styles.dateDisplay}>
+            <List.Icon icon="calendar" />
+            <Text style={styles.dateText}>
+              {moment(endTime).format("dddd D MMMM YYYY")}
+            </Text>
           </View>
-        )}
-        {/* Message informatif pour le web */}
-        {Platform.OS === "web" && (
-          <Text style={styles.webDateInfo}>
-            (Sélection date/heure non interactive sur web)
-          </Text>
-        )}
+        </TouchableRipple>
+        <TouchableRipple
+          onPress={() => setIsEndTimePickerVisible(true)}
+          style={styles.touchableTime}
+        >
+          <View style={styles.dateDisplay}>
+            <List.Icon icon="clock-outline" />
+            <Text style={styles.dateText}>
+              {moment(endTime).format("HH:mm")}
+            </Text>
+          </View>
+        </TouchableRipple>
         {errors.endTime && (
           <HelperText type="error">{errors.endTime}</HelperText>
         )}
 
-        {/* Le DateTimePicker communautaire (affiché conditionnellement UNIQUEMENT sur mobile) */}
-        {showPicker && Platform.OS !== "web" && (
-          <DateTimePicker
-            testID="dateTimePickerAppt"
-            value={pickerTarget === "start" ? startTime : endTime}
-            mode={pickerMode}
-            is24Hour={true}
-            display="default" // Laisser le système natif choisir
-            onChange={onChangeDateTime}
-            locale="fr-FR" // Peut ne pas être supporté sur toutes les plateformes natives
-            minimumDate={
-              pickerTarget === "end" && startTime
-                ? moment(startTime).add(1, "minute").toDate()
-                : undefined
-            }
-          />
-        )}
-
-        {/* Bouton Créer / ActivityIndicator (inchangés) */}
+        {/* Bouton Créer / Indicateur de chargement */}
         {isLoading ? (
           <ActivityIndicator
             animating={true}
@@ -276,34 +317,88 @@ export default function CreateAppointmentScreen() {
             mode="contained"
             onPress={handleCreateAppointment}
             style={styles.button}
+            disabled={isLoading}
           >
             Créer le Rendez-vous
           </Button>
         )}
       </ScrollView>
+
+      {/* Modals Date/Heure */}
+      <DatePickerModal
+        locale="fr"
+        mode="single"
+        visible={isStartDatePickerVisible}
+        onDismiss={onDismissPickers}
+        date={startTime}
+        onConfirm={onConfirmStartDatePicker}
+        saveLabel="Confirmer"
+        label="Date de début"
+      />
+      <TimePickerModal
+        locale="fr"
+        visible={isStartTimePickerVisible}
+        onDismiss={onDismissPickers}
+        hours={moment(startTime).hours()}
+        minutes={moment(startTime).minutes()}
+        onConfirm={onConfirmStartTimePicker}
+        label="Heure de début"
+        cancelLabel="Annuler"
+        confirmLabel="Confirmer"
+        use24HourClock
+      />
+      <DatePickerModal
+        locale="fr"
+        mode="single"
+        visible={isEndDatePickerVisible}
+        onDismiss={onDismissPickers}
+        date={endTime}
+        validRange={{ startDate: startTime }}
+        onConfirm={onConfirmEndDatePicker}
+        saveLabel="Confirmer"
+        label="Date de fin"
+      />
+      <TimePickerModal
+        locale="fr"
+        visible={isEndTimePickerVisible}
+        onDismiss={onDismissPickers}
+        hours={moment(endTime).hours()}
+        minutes={moment(endTime).minutes()}
+        onConfirm={onConfirmEndTimePicker}
+        label="Heure de fin"
+        cancelLabel="Annuler"
+        confirmLabel="Confirmer"
+        use24HourClock
+      />
+      {/* Le Snackbar est global */}
     </View>
   );
 }
 
-// Styles mis à jour pour inclure le message web
+// Styles
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 20, paddingBottom: 40 },
   input: { marginBottom: 16 },
   dateLabel: { fontSize: 16, marginTop: 8, marginBottom: 4, color: "grey" },
-  dateValue: { fontSize: 18, marginBottom: 12, fontWeight: "500" },
-  dateButtonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 16,
+  touchableDate: {
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "grey",
+    borderRadius: 4,
   },
-  dateButton: { flex: 1, marginHorizontal: 5 },
-  webDateInfo: {
-    alignSelf: "center",
-    fontStyle: "italic",
-    color: "grey",
+  touchableTime: {
+    paddingVertical: 12,
+    paddingHorizontal: 0,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "grey",
+    borderRadius: 4,
   },
+  dateDisplay: { flexDirection: "row", alignItems: "center", paddingLeft: 12 },
+  dateText: { fontSize: 16, marginLeft: 10 },
   button: { marginTop: 16, paddingVertical: 8 },
   activityIndicator: { marginTop: 20 },
 });
