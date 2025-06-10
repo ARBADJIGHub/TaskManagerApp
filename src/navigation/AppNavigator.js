@@ -21,6 +21,7 @@ import ConversationScreen from "../screens/main/ConversationScreen";
 import SettingsScreen from "../screens/main/SettingsScreen";
 import EditProfileScreen from "../screens/main/EditProfileScreen"; // Écran d'édition de profil
 import ChangePasswordScreen from "../screens/main/ChangePasswordScreen"; // Écran de changement de mot de passe
+import AdminDashboard from '../screens/admin/AdminDashboard';
 
 // Importer les icônes
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -116,6 +117,7 @@ function MainTabs() {
 // Gère la navigation entre l'écran des onglets (MainTabs) et les écrans de détails/création/édition
 export default function AppNavigator() {
   const theme = useTheme(); // Récupérer le thème pour styliser l'en-tête du Stack
+  const { userInfo } = useContext(AuthContext);
 
   return (
     <Stack.Navigator
@@ -184,6 +186,16 @@ export default function AppNavigator() {
         component={ChangePasswordScreen}
         options={{ title: "Changer Mot de Passe" }} // L'en-tête sera affiché
       />
+      {userInfo?.isAdmin && (
+        <Stack.Screen
+          name="AdminDashboard"
+          component={AdminDashboard}
+          options={{
+            title: 'Administration',
+            headerShown: true,
+          }}
+        />
+      )}
       {/* Ajoutez ici d'autres écrans si nécessaire */}
     </Stack.Navigator>
   );

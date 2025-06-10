@@ -1,8 +1,8 @@
 // backend/controllers/taskController.js
-import pool from "../config/db.js"; // Importer la connexion à la base de données
+const pool = require("../config/db.js"); // Importer la connexion à la base de données
 
 // Fonction pour récupérer toutes les tâches de l'utilisateur connecté (inchangée)
-export const getAllTasks = async (req, res) => {
+const getAllTasks = async (req, res) => {
   try {
     // Requête SQL pour récupérer toutes les tâches de l'utilisateur connecté (req.user.id vient du middleware d'authentification)
     const [tasks] = await pool.query(
@@ -20,7 +20,7 @@ export const getAllTasks = async (req, res) => {
 };
 
 // Fonction pour créer une nouvelle tâche (inchangée)
-export const createTask = async (req, res) => {
+const createTask = async (req, res) => {
   try {
     const { title, description, due_date } = req.body; // Récupérer les données de la requête POST
     const userId = req.user.id; // ID de l'utilisateur connecté
@@ -51,7 +51,7 @@ export const createTask = async (req, res) => {
 
 // *** FONCTION MODIFIÉE ***
 // Fonction pour récupérer une tâche par son ID (inclut sharingInfo et vérifie l'accès)
-export const getTaskById = async (req, res) => {
+const getTaskById = async (req, res) => {
   try {
     const taskId = req.params.id; // ID de la tâche depuis l'URL
     const userId = req.user.id; // ID de l'utilisateur connecté
@@ -120,7 +120,7 @@ export const getTaskById = async (req, res) => {
 };
 
 // Fonction pour mettre à jour une tâche existante (Correction typo status)
-export const updateTask = async (req, res) => {
+const updateTask = async (req, res) => {
   try {
     const taskId = req.params.id; // Récupérer l'ID de la tâche depuis les paramètres de la requête
     // Récupérer les données potentielles à mettre à jour depuis le corps de la requête POST/PUT
@@ -149,7 +149,7 @@ export const updateTask = async (req, res) => {
 };
 
 // Fonction pour supprimer une tâche (inchangée)
-export const deleteTask = async (req, res) => {
+const deleteTask = async (req, res) => {
   try {
     const taskId = req.params.id;
     // Supprime seulement si l'ID et le user_id correspondent
@@ -172,7 +172,7 @@ export const deleteTask = async (req, res) => {
 };
 
 // Fonction pour marquer une tâche comme terminée (Corrections typos SQL + variable)
-export const completeTask = async (req, res) => {
+const completeTask = async (req, res) => {
   try {
     const taskId = req.params.id;
     // Correction: WHERE et non WERE, req.user.id et non req.uer.id
@@ -196,7 +196,7 @@ export const completeTask = async (req, res) => {
 };
 
 // Fonction pour partager une tâche avec un autre utilisateur (Correction typo SQL)
-export const shareTask = async (req, res) => {
+const shareTask = async (req, res) => {
   try {
     const taskId = req.params.id;
     const { sharedWith } = req.body; // Récupérer l'ID de l'utilisateur destinataire
@@ -237,11 +237,11 @@ export const shareTask = async (req, res) => {
 };
 
 // Fonction pour récupérer les tâches partagées AVEC l'utilisateur (inchangée)
-export const getSharedWithMe = async (req, res) => {
+const getSharedWithMe = async (req, res) => {
   try {
     const [sharedTasks] = await pool.query(
       // Sélectionne les tâches où l'utilisateur actuel est le destinataire dans shared_items
-      `SELECT t.*, u_sharer.username as shared_by_username
+      `SELECT t.id, t.created_at, u_sharer.username
              FROM tasks t
              JOIN shared_items si ON t.id = si.item_id
              JOIN users u_sharer ON si.shared_by = u_sharer.id
@@ -260,7 +260,7 @@ export const getSharedWithMe = async (req, res) => {
 };
 
 // Fonction pour récupérer les tâches que l'utilisateur a partagées (Correction typo commentaire)
-export const getSharedByMe = async (req, res) => {
+const getSharedByMe = async (req, res) => {
   try {
     const [sharedTasks] = await pool.query(
       // Sélectionne les tâches où l'utilisateur actuel est l'expéditeur dans shared_items
@@ -281,4 +281,16 @@ export const getSharedByMe = async (req, res) => {
         "Erreur serveur lors de la récupération de vos tâches partagées.",
     }); // Correction typo message
   }
+};
+
+module.exports = {
+  getAllTasks,
+  createTask,
+  getTaskById,
+  updateTask,
+  deleteTask,
+  completeTask,
+  shareTask,
+  getSharedWithMe,
+  getSharedByMe,
 };
